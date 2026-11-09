@@ -460,6 +460,17 @@ type Device struct {
 	} `json:"parentRelations"`
 }
 
+// extendDelay returns when to extend the stream: a minute before it expires,
+// but never sooner than 30 seconds, so a short or stale expiresAt can't turn
+// the extend loop into a tight loop against Google's rate limits.
+func (a *API) extendDelay() time.Duration {
+	const minDelay = 30 * time.Second
+	if d := time.Until(a.StreamExpiresAt) - time.Minute; d > minDelay {
+		return d
+	}
+	return minDelay
+}
+
 func (a *API) StartExtendStreamTimer() {
 	if a.extendTimer != nil {
 		return
@@ -467,7 +478,7 @@ func (a *API) StartExtendStreamTimer() {
 
 	// Google expires sessions after ~5 minutes; each successful extension
 	// returns a new expiresAt, so keep extending until the stream stops.
-	timer := time.NewTimer(time.Until(a.StreamExpiresAt) - time.Minute)
+	timer := time.NewTimer(a.extendDelay())
 	stop := make(chan struct{})
 	a.extendTimer = timer
 	a.extendStop = stop
@@ -485,7 +496,7 @@ func (a *API) StartExtendStreamTimer() {
 				if err := a.ExtendStream(); err != nil {
 					return
 				}
-				timer.Reset(time.Until(a.StreamExpiresAt) - time.Minute)
+				timer.Reset(a.extendDelay())
 			case <-stop:
 				return
 			}
