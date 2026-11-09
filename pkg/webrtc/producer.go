@@ -14,6 +14,19 @@ func (c *Conn) GetTrack(media *core.Media, codec *core.Codec) (*core.Receiver, e
 		}
 	}
 
+	if c.Mode == core.ModeActiveProducer || c.Mode == core.ModePassiveProducer {
+		// The remote may send a different payload type than the codec a consumer
+		// already bound to (Nest answers with several H264 variants). Reuse the
+		// receiver for this media so packets reach the attached consumers instead
+		// of a new receiver that nobody reads.
+		for _, track := range c.Receivers {
+			if track.Media == media && track.Codec.Name == codec.Name {
+				track.Codec = codec
+				return track, nil
+			}
+		}
+	}
+
 	switch c.Mode {
 	case core.ModePassiveConsumer: // backchannel from browser
 		// set codec for consumer recv track so remote peer should send media with this codec
